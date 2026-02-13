@@ -122,6 +122,12 @@ python scripts/rsl_rl/play.py --task=Tracking-Flat-G1-v0 --num_envs=2 --wandb_pa
 The WandB run path can be located in the run overview. It follows the format {your_organization}/{project_name}/ along
 with a unique 8-character identifier. Note that run_name is different from run_path.
 
+
+### sim to sim
+```bash
+python3 deploy/deploy_mujoco/launch_async_sim_and_policy.py  --config=g1_29dof.yaml --dof=29
+```
+
 ## Code Structure
 
 Below is an overview of the code structure for this repository:
