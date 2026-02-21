@@ -22,7 +22,7 @@ def main():
     args = parser.parse_args()
 
     # Set environment variable if not already set
-    os.environ["G1_RL_ROOT_DIR"] = "/home/blake/gen_mimic"
+    os.environ["G1_RL_ROOT_DIR"] = "/home/jason/humanoid_ws/beyondbeyondbeyondmimic"
     # if "G1_RL_ROOT_DIR" not in os.environ:
     #     os.environ["G1_RL_ROOT_DIR"] = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     G1_RL_ROOT_DIR = os.getenv("G1_RL_ROOT_DIR")
