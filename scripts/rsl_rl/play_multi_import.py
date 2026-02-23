@@ -112,14 +112,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 motion_files.append(str(pathlib.Path(artifact.download()) / "motion.npz"))
             
             print(f'[INFO] Loading motion files: {motion_files}')
-            env_cfg.commands.motion.motion_files = motion_files
+            env_cfg.commands.multi_target_motion.motion_files = motion_files
         else:
             # Fallback to motion artifacts from the wandb run
             art = next((a for a in wandb_run.used_artifacts() if a.type == "motions"), None)
             if art is None:
                 print("[WARN] No model artifact found in the run.")
             else:
-                env_cfg.commands.motion.motion_file = str(pathlib.Path(art.download()) / "motion.npz")
+                env_cfg.commands.multi_target_motion.motion_file = str(pathlib.Path(art.download()) / "motion.npz")
 
     else:
         print(f"[INFO] Loading experiment from directory: {log_root_path}")

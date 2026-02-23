@@ -65,9 +65,8 @@ class G1MultiCatchingFlatEnvCfg(MultiCatchingEnvCfg):
 
         self.scene.robot = G1_CYLINDER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.actions.joint_pos.scale = G1_ACTION_SCALE
-        self.commands.motion.anchor_body_name = "torso_link"
-        self.commands.target_position.anchor_body_name = "torso_link"
-        self.commands.motion.body_names = [
+        self.commands.multi_target_motion.anchor_body_name = "torso_link"
+        self.commands.multi_target_motion.body_names = [
             "pelvis",
             "left_hip_roll_link",
             "left_knee_link",
@@ -83,6 +82,15 @@ class G1MultiCatchingFlatEnvCfg(MultiCatchingEnvCfg):
             "right_elbow_link",
             "right_wrist_yaw_link",
         ]
+        # self.commands.multi_target_motion.source_link_names = [
+        #     "left_palm_link",
+        #     "left_palm_link",
+        #     "left_palm_link",
+        #     "left_palm_link",
+        # ]
+        # self.commands.multi_target_motion.source_link_name = "right_palm_link"
+
+
 
 
 

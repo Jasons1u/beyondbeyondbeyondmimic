@@ -87,7 +87,7 @@ class CommandsCfg:
         resampling_time_range=(1.0e9, 1.0e9),
         debug_vis=True,
         target_pos_offset = (0.0, 0.0, 0.0),
-        target_euler_angle_offset = (0.0, 0.0, 0.0),
+        target_euler_angle_offset = (0.0, 3.1415, 0.0),
         # target_pos_range={
         #     "x": (0.4, 0.4),
         #     "y": (-0.7, -0.2),
@@ -276,7 +276,7 @@ class RewardsCfg:
     target_orientation_error = RewTerm(
         func=mdp.target_orientation_error_exp,
         weight=20.0,
-        params={"target_command_name": "target_position", "motion_command_name": "motion", "std": 0.5},
+        params={"target_command_name": "target_position", "motion_command_name": "motion", "std": 1.0},
     )
 
 @configclass

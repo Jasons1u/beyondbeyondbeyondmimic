@@ -82,21 +82,7 @@ class MySceneCfg(InteractiveSceneCfg):
 class CommandsCfg:
     """Command specifications for the MDP."""
 
-    target_position = mdp.TargetPositionCommandCfg(
-        asset_name="robot",
-        # target_body_name="left_wrist_yaw_link",
-        resampling_time_range=(1.0e9, 1.0e9),
-        debug_vis=True,
-        target_pos_range={
-            "x": (0.4, 0.4),
-            "y": (-0.3, 0.6),
-            "z": (-0.1, 0.3),
-        },
-        target_phase_start_range=(0.45, 0.45),
-        target_phase_end_range=(0.55, 0.55),
-    )
-
-    motion = mdp.MultiTargetMotionCommandCfg(
+    multi_target_motion = mdp.MultiTargetConditionedMotionCommandCfg(
         asset_name="robot",
         resampling_time_range=(1.0e9, 1.0e9),
         debug_vis=True,
@@ -110,8 +96,51 @@ class CommandsCfg:
         },
         velocity_range=VELOCITY_RANGE,
         joint_position_range=(-0.1, 0.1),
+        # Per-motion source and target link names
+        source_link_names=["left_palm_link", "left_palm_link", "left_palm_link", "left_palm_link"],
+        target_link_names=[None, None, None, None],  # None means sample static position
+        # Per-motion target position ranges
+        target_pos_ranges=[
+            {"x": (0.2, 0.4), "y": (-0.3, 0.6), "z": (0.1, 0.4)},  # Throw - no target position tracking
+            {"x": (0.2, 0.4), "y": (-0.3, 0.0), "z": (0.1, 0.4)},  # Right catch
+            {"x": (0.2, 0.4), "y": (0.3, 0.6), "z": (0.1, 0.4)},    # Left catch
+            {"x": (0.2, 0.4), "y": (0.0, 0.3), "z": (0.1, 0.4)},    # Middle catch
+        ],
+        # Per-motion target orientation ranges
+        target_euler_angle_ranges=[
+            {"roll": (0.0, 0.0), "pitch": (0.0, 0.0), "yaw": (0.0, 0.0)},  # Throw
+            {"roll": (0.0, 0.0), "pitch": (0.0, 0.0), "yaw": (0.0, 0.0)},  # Right catch
+            {"roll": (0.0, 0.0), "pitch": (0.0, 0.0), "yaw": (0.0, 0.0)},  # Left catch
+            {"roll": (0.0, 0.0), "pitch": (0.0, 0.0), "yaw": (0.0, 0.0)},  # Middle catch
+        ],
+        # Per-motion position offsets
+        target_pos_offsets=[
+            (0.0, 0.0, 0.0),  # Throw
+            (0.0, 0.0, 0.0),  # Right catch
+            (0.0, 0.0, 0.0),  # Left catch
+            (0.0, 0.0, 0.0),  # Middle catch
+        ],
+        # Per-motion orientation offsets
+        target_euler_angle_offsets=[
+            (0.0, 0.0, 0.0),  # Throw
+            (0.0, 0.0, 0.0),  # Right catch
+            (0.0, 0.0, 0.0),  # Left catch
+            (0.0, 0.0, 0.0),  # Middle catch
+        ],
+        # Per-motion phase ranges
+        target_phase_start_ranges=[
+            (0.0, 0.0),   # Throw
+            (0.45, 0.45), # Right catch
+            (0.45, 0.45), # Left catch
+            (0.45, 0.45), # Middle catch
+        ],
+        target_phase_end_ranges=[
+            (1.0, 1.0),   # Throw
+            (0.55, 0.55), # Right catch
+            (0.55, 0.55), # Left catch
+            (0.55, 0.55), # Middle catch
+        ],
     )
-        
 
 @configclass
 class ActionsCfg:
@@ -128,13 +157,12 @@ class ObservationsCfg:
     class PolicyCfg(ObsGroup):
         """Observations for policy group."""
 
-        command_imitate = ObsTerm(func=mdp.generated_commands, params={"command_name": "motion"})
-        command_target_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "target_position"})
+        command_conditioned_imitate = ObsTerm(func=mdp.generated_commands, params={"command_name": "multi_target_motion"})
         # motion_anchor_pos_b = ObsTerm(
-        #     func=mdp.motion_anchor_pos_b, params={"command_name": "motion"}, noise=Unoise(n_min=-0.25, n_max=0.25)
+        #     func=mdp.motion_anchor_pos_b, params={"command_name": "multi_target_motion"}, noise=Unoise(n_min=-0.25, n_max=0.25)
         # )
         motion_anchor_ori_b = ObsTerm(
-            func=mdp.motion_anchor_ori_b, params={"command_name": "motion"}, noise=Unoise(n_min=-0.05, n_max=0.05)
+            func=mdp.motion_anchor_ori_b, params={"command_name": "multi_target_motion"}, noise=Unoise(n_min=-0.05, n_max=0.05)
         )
         # base_lin_vel = ObsTerm(func=mdp.base_lin_vel, noise=Unoise(n_min=-0.5, n_max=0.5))
         base_ang_vel = ObsTerm(func=mdp.base_ang_vel, noise=Unoise(n_min=-0.2, n_max=0.2))
@@ -148,13 +176,12 @@ class ObservationsCfg:
 
     @configclass
     class PrivilegedCfg(ObsGroup):
-        command_imitate = ObsTerm(func=mdp.generated_commands, params={"command_name": "motion"})
-        command_target_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "target_position"})
+        command_conditioned_imitate = ObsTerm(func=mdp.generated_commands, params={"command_name": "multi_target_motion"})
 
-        motion_anchor_pos_b = ObsTerm(func=mdp.motion_anchor_pos_b, params={"command_name": "motion"})
-        motion_anchor_ori_b = ObsTerm(func=mdp.motion_anchor_ori_b, params={"command_name": "motion"})
-        body_pos = ObsTerm(func=mdp.robot_body_pos_b, params={"command_name": "motion"})
-        body_ori = ObsTerm(func=mdp.robot_body_ori_b, params={"command_name": "motion"})
+        motion_anchor_pos_b = ObsTerm(func=mdp.motion_anchor_pos_b, params={"command_name": "multi_target_motion"})
+        motion_anchor_ori_b = ObsTerm(func=mdp.motion_anchor_ori_b, params={"command_name": "multi_target_motion"})
+        body_pos = ObsTerm(func=mdp.robot_body_pos_b, params={"command_name": "multi_target_motion"})
+        body_ori = ObsTerm(func=mdp.robot_body_ori_b, params={"command_name": "multi_target_motion"})
         base_lin_vel = ObsTerm(func=mdp.base_lin_vel)
         base_ang_vel = ObsTerm(func=mdp.base_ang_vel)
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
@@ -218,32 +245,32 @@ class RewardsCfg:
     motion_global_anchor_pos = RewTerm(
         func=mdp.motion_global_anchor_position_error_exp,
         weight=0.5,
-        params={"command_name": "motion", "std": 0.3},
+        params={"command_name": "multi_target_motion", "std": 0.3},
     )
     motion_global_anchor_ori = RewTerm(
         func=mdp.motion_global_anchor_orientation_error_exp,
         weight=0.5,
-        params={"command_name": "motion", "std": 0.4},
+        params={"command_name": "multi_target_motion", "std": 0.4},
     )
     motion_body_pos = RewTerm(
         func=mdp.motion_relative_body_position_error_exp,
         weight=1.0,
-        params={"command_name": "motion", "std": 0.3},
+        params={"command_name": "multi_target_motion", "std": 0.3},
     )
     motion_body_ori = RewTerm(
         func=mdp.motion_relative_body_orientation_error_exp,
         weight=1.0,
-        params={"command_name": "motion", "std": 0.4},
+        params={"command_name": "multi_target_motion", "std": 0.4},
     )
     motion_body_lin_vel = RewTerm(
         func=mdp.motion_global_body_linear_velocity_error_exp,
         weight=1.0,
-        params={"command_name": "motion", "std": 1.0},
+        params={"command_name": "multi_target_motion", "std": 1.0},
     )
     motion_body_ang_vel = RewTerm(
         func=mdp.motion_global_body_angular_velocity_error_exp,
         weight=1.0,
-        params={"command_name": "motion", "std": 3.14},
+        params={"command_name": "multi_target_motion", "std": 3.14},
     )
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-1e-1)
     joint_limit = RewTerm(
@@ -264,11 +291,30 @@ class RewardsCfg:
             "threshold": 1.0,
         },
     )
-    target_position_error = RewTerm(
+    # throw_position_reward = RewTerm(
+    #     func=mdp.multi_motion_target_position_error_exp,
+    #     weight=20.0,
+    #     params={"target_command_name": "multi_target_motion", "motion_command_name": "multi_target_motion", "std": 0.5, "motion_to_reward": 0},
+    # )
+
+    right_catch_position_reward = RewTerm(
         func=mdp.multi_motion_target_position_error_exp,
         weight=20.0,
-        params={"target_command_name": "target_position", "motion_command_name": "motion", "std": 0.5},
+        params={"target_command_name": "multi_target_motion", "std": 0.5, "motion_to_reward": 1},
     )
+
+    left_catch_position_reward = RewTerm(
+        func=mdp.multi_motion_target_position_error_exp,
+        weight=20.0,
+        params={"target_command_name": "multi_target_motion", "std": 0.5, "motion_to_reward": 2},
+    )
+
+    middle_catch_position_reward = RewTerm(
+        func=mdp.multi_motion_target_position_error_exp,
+        weight=20.0,
+        params={"target_command_name": "multi_target_motion", "std": 0.5, "motion_to_reward": 3},
+    )
+
 
 
 @configclass
@@ -278,16 +324,16 @@ class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     anchor_pos = DoneTerm(
         func=mdp.bad_anchor_pos_z_only,
-        params={"command_name": "motion", "threshold": 0.25},
+        params={"command_name": "multi_target_motion", "threshold": 0.25},
     )
     anchor_ori = DoneTerm(
         func=mdp.bad_anchor_ori,
-        params={"asset_cfg": SceneEntityCfg("robot"), "command_name": "motion", "threshold": 0.8},
+        params={"asset_cfg": SceneEntityCfg("robot"), "command_name": "multi_target_motion", "threshold": 0.8},
     )
     ee_body_pos = DoneTerm(
         func=mdp.bad_motion_body_pos_z_only,
         params={
-            "command_name": "motion",
+            "command_name": "multi_target_motion",
             "threshold": 0.25,
             "body_names": [
                 "left_ankle_roll_link",
