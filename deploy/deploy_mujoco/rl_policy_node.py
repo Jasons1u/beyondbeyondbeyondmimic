@@ -565,7 +565,7 @@ class RLPolicyNode(Node):
                 return
             except Exception as e:
                 print(
-                    f"ONNX inference failed: {e} — falling back to IK/default publish"
+                    f"ONNX inference failed: {e}"
                 )
                 exit(0)
 
@@ -824,9 +824,11 @@ class RLPolicyNode(Node):
             obs_val = obs_func()
             if obs_val is None:
                 raise RuntimeError(f"Observation function '{func_name}' returned None.")
+            print(f"Observation '{name}' from '{func_name}': {obs_val}")
             obs_list.append(np.asarray(obs_val, dtype=np.float32))
 
         observations = np.concatenate(obs_list, axis=-1)
+        # print("Constructed observations:", observations)
         return observations
 
 

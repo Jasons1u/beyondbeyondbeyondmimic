@@ -24,6 +24,9 @@ class MujocoSimNode(Node):
         self.robot_position_pub = self.create_publisher(
             Float32MultiArray, "robot_position", 10
         )
+        self.ball_orientation_pub = self.create_publisher(
+            Float32MultiArray, "ball_orientation", 10
+        )
         self.time_pub = self.create_publisher(Float64, "sim_time", 10)
         
         self.height_map_pub = self.create_publisher(Float32MultiArray, "height_map", 10)
@@ -55,7 +58,8 @@ class MujocoSimNode(Node):
         
         ##################################################### Ball spawn configuration
         self.ball_spawn_time = 0.0  # Spawn ball at t=0.0s
-        self.ball_position = np.array([0.1, 0.0, 1.1])  # x, y, z position
+        self.ball_position = np.array([0.21, 0.0, 1.1])  # x, y, z position
+        self.ball_orientation = np.array([1.0, 0.0, 0.0, 0.0])  # identity quaternion (w, x, y, z)
         #####################################################
 #         target_pos_range={
         #     "x": (0.2, 0.4),
@@ -220,6 +224,12 @@ class MujocoSimNode(Node):
             ball_pos_msg = Float32MultiArray()
             ball_pos_msg.data = ball_pos.tolist()
             self.ball_position_pub.publish(ball_pos_msg)
+            
+            ball_quat = self.d.xquat[self.ball_body_id]
+            self.ball_orientation = ball_quat
+            ball_quat_msg = Float32MultiArray()
+            ball_quat_msg.data = ball_quat.tolist()
+            self.ball_orientation_pub.publish(ball_quat_msg)
 
         # --- Synchronize simulation time with real time ---
         sim_dt = self.simulation_dt
