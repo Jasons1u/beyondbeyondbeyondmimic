@@ -61,11 +61,6 @@ class MujocoSimNode(Node):
         self.ball_position = np.array([0.4, 0.0, 1.1])  # x, y, z position
         self.ball_orientation = np.array([1.0, 0.0, 0.0, 0.0])  # identity quaternion (w, x, y, z)
         #####################################################
-#         target_pos_range={
-        #     "x": (0.2, 0.4),
-        #     "y": (-0.3, 0.6),
-        #     "z": (0.1, 0.4),
-        # },
 
         self.ball_spawned = False
 

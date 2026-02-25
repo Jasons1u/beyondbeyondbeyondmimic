@@ -46,10 +46,6 @@ class RLPolicyNode(Node):
             Float64, "control_enable", self.control_enable_callback, 10
         )
 
-        self.base_lin_vel_sub = self.create_subscription(
-            Float32MultiArray, "base_lin_vel", self.base_lin_vel_callback, 10
-        )
-
         self.ball_position_sub = self.create_subscription(
             Float32MultiArray, "ball_position", self.ball_position_callback, 10
         )
@@ -84,7 +80,6 @@ class RLPolicyNode(Node):
         # Lightweight state used by simplified node
 
         self.robot_position = np.zeros(3, dtype=np.float32)
-        self.base_lin_vel = np.zeros(3, dtype=np.float32)
         self.qj = np.zeros(29, dtype=np.float32)
         self.dqj = np.zeros(29, dtype=np.float32)
         self.omega = np.zeros(3, dtype=np.float32)
@@ -537,20 +532,6 @@ class RLPolicyNode(Node):
         if not getattr(self, '_policy_started', False):
             print(f"[RLPolicyNode] Policy stepping started at sim_time={getattr(self,'sim_time',-1):.3f}", flush=True)
             self._policy_started = True
-    
-            
-        # which = torch.full((len(env_ids),), 0, dtype=torch.long, device=self.device) # throw when the x position is betwen 0 and 0.3
-
-        # # in negative y direction, use right catch
-        # which[(y_pos < 0.0) & (x_pos > 0.3)] = 1 # right catch 
-
-        # # in positive y direction use left catch
-        # which[(y_pos > 0.3) & (x_pos > 0.3)] = 2 # left catch 
-
-        # # in between use middle catch
-        # which[(y_pos > 0.0) & (y_pos < 0.3) & (x_pos > 0.3)] = 3 # middle catch
-
-            # Select motion based on ball position
         
         # Handle motion playback: increment frame only if playback active
         if len(self.motion_trajectories) > 0 and self.which_motion < len(self.motion_trajectories) and self._play_motion_once:
@@ -586,7 +567,7 @@ class RLPolicyNode(Node):
                 return
             except Exception as e:
                 print(
-                    f"ONNX inference failed: {e} — falling back to IK/default publish"
+                    f"ONNX inference failed: {e}"
                 )
                 exit(0)
 
@@ -614,11 +595,6 @@ class RLPolicyNode(Node):
 
     def time_callback(self, msg):
         self.sim_time = msg.data
-
-    def base_lin_vel_callback(self, msg):
-        received = np.array(msg.data, dtype=np.float32)
-        if len(received) == 3:
-            self.base_lin_vel = np.array(received, dtype=np.float32)
 
     def ball_position_callback(self, msg):
         received = np.array(msg.data, dtype=np.float32)
@@ -780,9 +756,6 @@ class RLPolicyNode(Node):
             [2*(x*y + w*z), 1 - 2*(x*x + z*z), 2*(y*z - w*x)],
             [2*(x*z - w*y), 2*(y*z + w*x), 1 - 2*(x*x + y*y)]
         ], dtype=np.float32)
-
-    def obs_base_lin_vel(self):
-        return self.base_lin_vel
 
     def obs_base_ang_vel(self):
         return self.omega

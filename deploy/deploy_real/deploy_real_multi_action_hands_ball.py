@@ -260,7 +260,7 @@ class Controller(Node):
 
         # Load motion trajectory from npz file if provided
         self.load_motion_trajectories()
-        self.initial_pose_index = 10
+        self.initial_pose_index = 1
         
         # Initialize hand controllers
         try:
