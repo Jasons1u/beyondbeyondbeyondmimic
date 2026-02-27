@@ -97,17 +97,19 @@ class CommandsCfg:
         velocity_range=VELOCITY_RANGE,
         joint_position_range=(-0.1, 0.1),
         # Per-motion source and target link names
-        source_link_names=["left_palm_link", "left_palm_link", "left_palm_link", "left_palm_link"],
-        target_link_names=[None, None, None, None],  # None means sample static position
+        source_link_names=["left_palm_link", "left_palm_link", "left_palm_link", "left_palm_link", "right_palm_link"],
+        target_link_names=[None, None, None, None, "left_palm_link"],  # None means sample static position
         # source_link_names=["left_palm_link"],
         # target_link_names=[None],
 
         # Per-motion target position ranges
         target_pos_ranges=[
-            {"x": (0.2, 0.4), "y": (-0.3, 0.6), "z": (0.1, 0.4)},  # Throw - no target position tracking
-            {"x": (0.2, 0.4), "y": (-0.3, 0.0), "z": (0.1, 0.4)},  # Right catch
-            {"x": (0.2, 0.4), "y": (0.3, 0.6), "z": (0.1, 0.4)},    # Left catch
-            {"x": (0.2, 0.4), "y": (0.0, 0.3), "z": (0.1, 0.4)},    # Middle catch
+            {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)},  # Throw - no target position tracking
+            {"x": (0.25, 0.35), "y": (-0.3, 0.0), "z": (0.1, 0.4)},  # Right catch
+            {"x": (0.25, 0.35), "y": (0.3, 0.6), "z": (0.1, 0.4)},    # Left catch
+            {"x": (0.25, 0.35), "y": (0.0, 0.3), "z": (0.1, 0.4)},    # Middle catch
+            {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)},    # Handoff - no target position tracking
+
         ],
         # Per-motion target orientation ranges
         target_euler_angle_ranges=[
@@ -115,6 +117,7 @@ class CommandsCfg:
             {"roll": (0.0, 0.0), "pitch": (0.0, 0.0), "yaw": (0.0, 0.0)},  # Right catch
             {"roll": (0.0, 0.0), "pitch": (0.0, 0.0), "yaw": (0.0, 0.0)},  # Left catch
             {"roll": (0.0, 0.0), "pitch": (0.0, 0.0), "yaw": (0.0, 0.0)},  # Middle catch
+            {"roll": (0.0, 0.0), "pitch": (0.0, 0.0), "yaw": (0.0, 0.0)},  # Handoff 
         ],
         # Per-motion position offsets
         target_pos_offsets=[
@@ -122,13 +125,15 @@ class CommandsCfg:
             (0.0, 0.0, 0.0),  # Right catch
             (0.0, 0.0, 0.0),  # Left catch
             (0.0, 0.0, 0.0),  # Middle catch
+            (0.0, 0.0, 0.0),  # Handoff
         ],
         # Per-motion orientation offsets
         target_euler_angle_offsets=[
             (0.0, 0.0, 0.0),  # Throw
-            (0.0, 0.0, 0.0),  # Right catch
-            (0.0, 0.0, 0.0),  # Left catch
-            (0.0, 0.0, 0.0),  # Middle catch
+            (0.0, 0.0, 1.5708),  # Right catch
+            (0.0, 0.0, 1.5708),  # Left catch
+            (0.0, 0.0, 1.5708),  # Middle catch
+            (0.0, 3.1415, 0.0),  # Handoff
         ],
         # Per-motion phase ranges
         target_phase_start_ranges=[
@@ -136,12 +141,14 @@ class CommandsCfg:
             (0.45, 0.45), # Right catch
             (0.45, 0.45), # Left catch
             (0.45, 0.45), # Middle catch
+            (0.45, 0.45), # Handoff       
         ],
         target_phase_end_ranges=[
             (1.0, 1.0),   # Throw
             (0.55, 0.55), # Right catch
             (0.55, 0.55), # Left catch
             (0.55, 0.55), # Middle catch
+            (0.55, 0.55), # Handoff
         ],
     )
 
@@ -298,20 +305,80 @@ class RewardsCfg:
     right_catch_position_reward = RewTerm(
         func=mdp.multi_motion_target_position_error_exp,
         weight=20.0,
-        params={"target_command_name": "multi_target_motion", "std": 0.5, "motion_to_reward": 1},
+        params={"target_command_name": "multi_target_motion", "std": 0.3, "motion_to_reward": 1},
     )
+
+    right_catch_orientation_axis_alignment_reward = RewTerm(
+        func=mdp.multi_motion_target_orientation_axis_alignment_error_exp,
+        weight=5.0,
+        params={"target_command_name": "multi_target_motion", "std": 1.0, "axis": "y", "motion_to_reward": 1,},
+    )
+
+    # right_catch_orientation_reward = RewTerm(
+    #     func=mdp.multi_motion_target_orientation_error_exp,
+    #     weight=5.0,
+    #     params={"target_command_name": "multi_target_motion", "std": 1.0, "motion_to_reward": 1},
+    # )
+
+
 
     left_catch_position_reward = RewTerm(
         func=mdp.multi_motion_target_position_error_exp,
         weight=20.0,
-        params={"target_command_name": "multi_target_motion", "std": 0.5, "motion_to_reward": 2},
+        params={"target_command_name": "multi_target_motion", "std": 0.3, "motion_to_reward": 2},
     )
+
+    left_catch_orientation_axis_alignment_reward = RewTerm(
+        func=mdp.multi_motion_target_orientation_axis_alignment_error_exp,
+        weight=5.0,
+        params={"target_command_name": "multi_target_motion", "std": 1.0, "axis": "y", "motion_to_reward": 2,},
+    )   
+
+
+    # left_catch_orientation_reward = RewTerm(
+    #     func=mdp.multi_motion_target_orientation_error_exp,
+    #     weight=5.0,
+    #     params={"target_command_name": "multi_target_motion", "std": 1.0, "motion_to_reward": 2},
+    # )
+
+
 
     middle_catch_position_reward = RewTerm(
         func=mdp.multi_motion_target_position_error_exp,
         weight=20.0,
-        params={"target_command_name": "multi_target_motion", "std": 0.5, "motion_to_reward": 3},
+        params={"target_command_name": "multi_target_motion", "std": 0.3, "motion_to_reward": 3},
     )
+
+    middle_catch_orientation_axis_alignment_reward = RewTerm(
+        func=mdp.multi_motion_target_orientation_axis_alignment_error_exp,
+        weight=5.0,
+        params={"target_command_name": "multi_target_motion", "std": 1.0, "axis": "y", "motion_to_reward": 3,},
+    )   
+    
+    # middle_catch_orientation_reward = RewTerm(
+    #     func=mdp.multi_motion_target_orientation_error_exp,
+    #     weight=5.0,
+    #     params={"target_command_name": "multi_target_motion", "std": 1.0, "motion_to_reward": 3},
+    # )
+
+    handoff_position_reward = RewTerm(
+        func=mdp.multi_motion_target_position_error_exp,
+        weight=10.0,
+        params={"target_command_name": "multi_target_motion", "std": 0.3, "motion_to_reward": 4},
+    )
+
+    handoff_orientation_reward = RewTerm(
+        func=mdp.multi_motion_target_orientation_error_exp,
+        weight=5.0,
+        params={"target_command_name": "multi_target_motion", "std": 1.0, "motion_to_reward": 4},
+    )
+
+    # handoff_orientation_reward = RewTerm(
+    #     func=mdp.multi_motion_target_orientation_axis_alignment_error_exp,
+    #     weight=5.0,
+    #     params={"target_command_name": "multi_target_motion", "std": 1.0, "axis": "y", "motion_to_reward": 4,},
+    # )
+
 
 
 

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import ContactSensor
-from isaaclab.utils.math import quat_error_magnitude
+from isaaclab.utils.math import quat_apply, quat_error_magnitude
 
 from whole_body_tracking.tasks.tracking.mdp.commands import MotionCommand, TargetPositionCommand
 
@@ -109,6 +109,43 @@ def target_orientation_error_exp(env: ManagerBasedRLEnv, target_command_name: st
     return reward * active.float()
 
 
+def target_orientation_axis_alignment_error_exp(
+    env: ManagerBasedRLEnv,
+    target_command_name: str,
+    motion_command_name: str,
+    std: float,
+    axis: str,
+) -> torch.Tensor:
+    """Exponential reward for alignment of a single axis between source and target orientations.
+
+    The reward is invariant to rotations around the chosen axis.
+    """
+    target_command: TargetPositionCommand = env.command_manager.get_term(target_command_name)
+    motion_command: MotionCommand = env.command_manager.get_term(motion_command_name)
+
+    axis_map = {
+        "x": torch.tensor([1.0, 0.0, 0.0], device=target_command.device),
+        "y": torch.tensor([0.0, 1.0, 0.0], device=target_command.device),
+        "z": torch.tensor([0.0, 0.0, 1.0], device=target_command.device),
+    }
+    if axis not in axis_map:
+        raise ValueError(f"Invalid axis '{axis}'. Expected one of: 'x', 'y', 'z'.")
+
+    axis_vec = axis_map[axis].expand(target_command.num_envs, 3)
+
+    target_axis_w = quat_apply(target_command.target_orientation_w, axis_vec)
+    source_axis_w = quat_apply(target_command.source_body_quat_w, axis_vec)
+
+    dot = torch.sum(target_axis_w * source_axis_w, dim=-1).clamp(-1.0, 1.0)
+    error = 1.0 - dot
+    reward = torch.exp(-(error**2) / std**2)
+
+    phase = motion_command.time_steps / motion_command.motion.time_step_total
+    active = (phase >= target_command.target_phase_start[0]) & (phase <= target_command.target_phase_end[0])
+
+    return reward * active.float()
+
+
 def multi_motion_target_position_error_exp(env: ManagerBasedRLEnv, target_command_name: str, std: float, motion_to_reward: int) -> torch.Tensor:
     """Exponential reward for target position tracking error for a specific motion."""
     command = env.command_manager.get_term(target_command_name)
@@ -158,6 +195,58 @@ def multi_motion_target_orientation_error_exp(env: ManagerBasedRLEnv, target_com
     reward = torch.exp(-error / std**2)
     
     # Gather time_step_total for each motion in the batch
+    time_step_totals = torch.tensor(
+        [loader.time_step_total for loader in command.motion_loaders],
+        device=command.device,
+        dtype=torch.float32
+    )
+    time_step_total = time_step_totals[which_motion]
+    phase = command.time_steps / time_step_total
+
+    active = (phase >= command.target_phase_start) & (phase <= command.target_phase_end)
+    return reward * active.float() * correct_motion.float()
+
+def multi_motion_target_orientation_axis_alignment_error_exp(
+    env: ManagerBasedRLEnv,
+    target_command_name: str,
+    std: float,
+    axis: str,
+    motion_to_reward: int,
+) -> torch.Tensor:
+    """Exponential reward for alignment of a single axis between source and target orientations.
+
+    The reward is invariant to rotations around the chosen axis.
+    """
+    command = env.command_manager.get_term(target_command_name)
+
+    which_motion = command.which_motion
+    correct_motion = (which_motion == motion_to_reward)
+
+    # Get source body orientations based on the current motion
+    source_body_quats = torch.zeros(command.num_envs, 4, device=command.device)
+    source_body_quats[:, 0] = 1.0  # Initialize with identity quaternion
+    for i in range(len(command.motion_configs)):
+        mask = command.which_motion == i
+        if torch.any(mask):
+            source_body_quats[mask] = command.robot.data.body_quat_w[mask, command.source_body_indices[i]]
+
+    axis_map = {
+        "x": torch.tensor([1.0, 0.0, 0.0], device=command.device),
+        "y": torch.tensor([0.0, 1.0, 0.0], device=command.device),
+        "z": torch.tensor([0.0, 0.0, 1.0], device=command.device),
+    }
+    if axis not in axis_map:
+        raise ValueError(f"Invalid axis '{axis}'. Expected one of: 'x', 'y', 'z'.")
+
+    axis_vec = axis_map[axis].expand(command.num_envs, 3)
+
+    target_axis_w = quat_apply(command.target_orientation_w, axis_vec)
+    source_axis_w = quat_apply(source_body_quats, axis_vec)
+
+    dot = torch.sum(target_axis_w * source_axis_w, dim=-1).clamp(-1.0, 1.0)
+    error = 1.0 - dot
+    reward = torch.exp(-(error**2) / std**2)
+
     time_step_totals = torch.tensor(
         [loader.time_step_total for loader in command.motion_loaders],
         device=command.device,

@@ -1694,13 +1694,48 @@ class MultiTargetConditionedMotionCommand(CommandTerm):
     def _resample_command(self, env_ids: Sequence[int]):
         if len(env_ids) == 0:
             return
-        
+        # print('calling resample command with env_ids:', env_ids)
         # Choose which motion to track for each env uniformly at random
         self.which_motion[env_ids] = torch.randint(0, len(self.motion_loaders), (len(env_ids),), device=self.device)
+        # self.which_motion[env_ids] = torch.ones(len(env_ids), dtype=torch.long, device=self.device)
         
         # Then do adaptive sampling based on chosen motions
         self._adaptive_sampling(env_ids)
         
+        # Set the root position to the body position in the motion
+        root_pos = self.body_pos_w[:, 0].clone()
+        root_ori = self.body_quat_w[:, 0].clone()
+        root_lin_vel = self.body_lin_vel_w[:, 0].clone()
+        root_ang_vel = self.body_ang_vel_w[:, 0].clone()
+
+        range_list = [self.cfg.pose_range.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
+        ranges = torch.tensor(range_list, device=self.device)
+        rand_samples = sample_uniform(ranges[:, 0], ranges[:, 1], (len(env_ids), 6), device=self.device)
+        root_pos[env_ids] += rand_samples[:, 0:3]
+        orientations_delta = quat_from_euler_xyz(rand_samples[:, 3], rand_samples[:, 4], rand_samples[:, 5])
+        root_ori[env_ids] = quat_mul(orientations_delta, root_ori[env_ids])
+        
+        range_list = [self.cfg.velocity_range.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
+        ranges = torch.tensor(range_list, device=self.device)
+        rand_samples = sample_uniform(ranges[:, 0], ranges[:, 1], (len(env_ids), 6), device=self.device)
+        root_lin_vel[env_ids] += rand_samples[:, :3]
+        root_ang_vel[env_ids] += rand_samples[:, 3:]
+
+        joint_pos = self.joint_pos.clone()
+        joint_vel = self.joint_vel.clone()
+
+        joint_pos += sample_uniform(*self.cfg.joint_position_range, joint_pos.shape, joint_pos.device)
+        soft_joint_pos_limits = self.robot.data.soft_joint_pos_limits[env_ids]
+        joint_pos[env_ids] = torch.clip(
+            joint_pos[env_ids], soft_joint_pos_limits[:, :, 0], soft_joint_pos_limits[:, :, 1]
+        )
+        self.robot.write_joint_state_to_sim(joint_pos[env_ids], joint_vel[env_ids], env_ids=env_ids)
+        self.robot.write_root_state_to_sim(
+            torch.cat([root_pos[env_ids], root_ori[env_ids], root_lin_vel[env_ids], root_ang_vel[env_ids]], dim=-1),
+            env_ids=env_ids,
+        )
+
+
         # Sample target positions and orientations based on the selected motion
         for i in range(len(self.motion_configs)):
             motion_mask = self.which_motion[env_ids] == i
@@ -1767,38 +1802,6 @@ class MultiTargetConditionedMotionCommand(CommandTerm):
             self.target_phase_start[env_indices_for_motion] = t_start
             self.target_phase_end[env_indices_for_motion] = t_end
 
-        # Set the root position to the body position in the motion
-        root_pos = self.body_pos_w[:, 0].clone()
-        root_ori = self.body_quat_w[:, 0].clone()
-        root_lin_vel = self.body_lin_vel_w[:, 0].clone()
-        root_ang_vel = self.body_ang_vel_w[:, 0].clone()
-
-        range_list = [self.cfg.pose_range.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
-        ranges = torch.tensor(range_list, device=self.device)
-        rand_samples = sample_uniform(ranges[:, 0], ranges[:, 1], (len(env_ids), 6), device=self.device)
-        root_pos[env_ids] += rand_samples[:, 0:3]
-        orientations_delta = quat_from_euler_xyz(rand_samples[:, 3], rand_samples[:, 4], rand_samples[:, 5])
-        root_ori[env_ids] = quat_mul(orientations_delta, root_ori[env_ids])
-        
-        range_list = [self.cfg.velocity_range.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
-        ranges = torch.tensor(range_list, device=self.device)
-        rand_samples = sample_uniform(ranges[:, 0], ranges[:, 1], (len(env_ids), 6), device=self.device)
-        root_lin_vel[env_ids] += rand_samples[:, :3]
-        root_ang_vel[env_ids] += rand_samples[:, 3:]
-
-        joint_pos = self.joint_pos.clone()
-        joint_vel = self.joint_vel.clone()
-
-        joint_pos += sample_uniform(*self.cfg.joint_position_range, joint_pos.shape, joint_pos.device)
-        soft_joint_pos_limits = self.robot.data.soft_joint_pos_limits[env_ids]
-        joint_pos[env_ids] = torch.clip(
-            joint_pos[env_ids], soft_joint_pos_limits[:, :, 0], soft_joint_pos_limits[:, :, 1]
-        )
-        self.robot.write_joint_state_to_sim(joint_pos[env_ids], joint_vel[env_ids], env_ids=env_ids)
-        self.robot.write_root_state_to_sim(
-            torch.cat([root_pos[env_ids], root_ori[env_ids], root_lin_vel[env_ids], root_ang_vel[env_ids]], dim=-1),
-            env_ids=env_ids,
-        )
 
     def _update_command(self):
         """Update command each step: increment time steps, handle motion completion, update target positions for moving targets, and update adaptive tracking."""
@@ -1866,10 +1869,17 @@ class MultiTargetConditionedMotionCommand(CommandTerm):
         if debug_vis:
             if not hasattr(self, "target_visualizer"):
                 self.target_visualizer = VisualizationMarkers(self.cfg.anchor_visualizer_cfg.replace(prim_path="/Visuals/Command/target"))
+            if not hasattr(self, "source_link_visualizer"):
+                self.source_link_visualizer = VisualizationMarkers(
+                    self.cfg.body_visualizer_cfg.replace(prim_path="/Visuals/Command/source_link")
+                )
             self.target_visualizer.set_visibility(True)
+            self.source_link_visualizer.set_visibility(True)
         else:
             if hasattr(self, "target_visualizer"):
                 self.target_visualizer.set_visibility(False)
+            if hasattr(self, "source_link_visualizer"):
+                self.source_link_visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
         """Callback for debug visualization - draw target positions."""
@@ -1878,6 +1888,17 @@ class MultiTargetConditionedMotionCommand(CommandTerm):
         # Visualize target positions
         if hasattr(self, "target_visualizer"):
             self.target_visualizer.visualize(self.target_position_w, self.target_orientation_w)
+        if hasattr(self, "source_link_visualizer"):
+            source_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
+            source_quat_w = torch.zeros(self.num_envs, 4, device=self.device)
+            source_quat_w[:, 0] = 1.0
+            for i in range(len(self.motion_configs)):
+                mask = self.which_motion == i
+                if torch.any(mask):
+                    source_body_idx = self.source_body_indices[i]
+                    source_pos_w[mask] = self.robot.data.body_pos_w[mask, source_body_idx]
+                    source_quat_w[mask] = self.robot.data.body_quat_w[mask, source_body_idx]
+            self.source_link_visualizer.visualize(source_pos_w, source_quat_w)
 
 
 class Motion():
