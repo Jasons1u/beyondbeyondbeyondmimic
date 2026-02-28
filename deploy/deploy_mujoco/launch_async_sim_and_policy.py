@@ -56,32 +56,30 @@ def main():
         policy_cmd = policy_cmd_13
     else:
         raise ValueError("Invalid DOF value. Must be 13 or 29.")
-    if plot_feet:
-        plotter_cmd = [
-            sys.executable,
-            os.path.join(os.path.dirname(__file__), "foot_force_plotter.py"),
-        ]
+    planner_cmd = [
+        sys.executable,
+        os.path.join(os.path.dirname(__file__), "planner_node.py"),
+    ]
 
     # Launch both processes
     sim_proc = subprocess.Popen(sim_cmd, env=os.environ)
     policy_proc = subprocess.Popen(policy_cmd, env=os.environ)
-    if plot_feet:
-        plotter_proc = subprocess.Popen(plotter_cmd, env=os.environ)
+    planner_proc = subprocess.Popen(planner_cmd, env=os.environ)
 
     try:
         sim_proc.wait()
         policy_proc.wait()
-        if plot_feet:
-            plotter_proc.wait()
+        planner_proc.wait()
+
     except KeyboardInterrupt:
         sim_proc.terminate()
         policy_proc.terminate()
-        if plot_feet:
-            plotter_proc.terminate()
+        planner_proc.terminate()
+
         sim_proc.wait()
         policy_proc.wait()
-        if plot_feet:
-            plotter_proc.wait()
+        planner_proc.wait()
+
 
 
 if __name__ == "__main__":

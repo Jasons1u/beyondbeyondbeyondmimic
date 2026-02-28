@@ -105,9 +105,9 @@ class CommandsCfg:
         # Per-motion target position ranges
         target_pos_ranges=[
             {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)},  # Throw - no target position tracking
-            {"x": (0.25, 0.35), "y": (-0.3, 0.0), "z": (0.1, 0.4)},  # Right catch
-            {"x": (0.25, 0.35), "y": (0.3, 0.6), "z": (0.1, 0.4)},    # Left catch
-            {"x": (0.25, 0.35), "y": (0.0, 0.3), "z": (0.1, 0.4)},    # Middle catch
+            {"x": (0.25, 0.35), "y": (-0.3, 0.0), "z": (-0.2, 0.4)},  # Right catch
+            {"x": (0.25, 0.35), "y": (0.3, 0.6), "z": (-0.2, 0.4)},    # Left catch
+            {"x": (0.25, 0.35), "y": (0.0, 0.3), "z": (-0.2, 0.4)},    # Middle catch
             {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)},    # Handoff - no target position tracking
 
         ],

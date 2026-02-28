@@ -47,15 +47,11 @@ class RLPolicyNode(Node):
         )
 
         self.ball_position_sub = self.create_subscription(
-            Float32MultiArray, "ball_intercept_estimate", self.ball_position_callback, 10
+            Float32MultiArray, "ball_position", self.ball_position_callback, 10
         )
 
         self.ball_orientation_sub = self.create_subscription(
             Float32MultiArray, "ball_orientation", self.ball_orientation_callback, 10
-        )
-
-        self.play_motion_sub = self.create_subscription(
-            Float32MultiArray, "play_motion_command", self.play_motion_callback, 10
         )
 
         self.action_pub = self.create_publisher(Float32MultiArray, "action", 10)
@@ -67,7 +63,7 @@ class RLPolicyNode(Node):
         # Load minimal config (only keys present in YAML)
         self.load_config()
         # Load policy if desired (may be TorchScript); it's optional — node works without it.
-        self.initial_pose_index = 20
+        self.initial_pose_index = 0
 
         self.load_policy()
         self.load_policy_metadata()
@@ -613,23 +609,6 @@ class RLPolicyNode(Node):
 
         if len(received) == 3:
             self.ball_position = np.array(received, dtype=np.float32)
-
-        ball_pos_relative_w = self.ball_position - self.robot_position
-        q_inv = self._quat_conjugate(self.quat)
-        ball_pos_body = self._quat_rotate(q_inv, ball_pos_relative_w)
-        ball_x_body = ball_pos_body[0]
-        ball_y_body = ball_pos_body[1]
-
-        # self.which_motion = 0  # default to idle
-        # print(f"Ball position in body frame: x={ball_x_body:.3f}, y={ball_y_body:.3f}", flush=True)
-        if ball_x_body == 0.0:
-            self.which_motion = 0
-        elif ball_y_body < 0.0:
-            self.which_motion = 1
-        elif ball_y_body > 0.3:
-            self.which_motion = 2
-        else:
-            self.which_motion = 3
 
     def ball_orientation_callback(self, msg):
         received = np.array(msg.data, dtype=np.float32)
