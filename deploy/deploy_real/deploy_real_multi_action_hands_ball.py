@@ -307,6 +307,8 @@ class Controller(Node):
                     self.which_motion = 2
                 else:  # Ball is in the center
                     self.which_motion = 3
+                if ball_x ==0.2 and ball_y == 0.2:
+                    self.which_motion = 4
         else:
             self.get_logger().warning(f"Received ball position with insufficient data: {msg.data}")
 
