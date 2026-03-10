@@ -1,5 +1,6 @@
 <mujoco model="g1_29dof">
   <compiler angle="radian" meshdir="meshes" />
+  <option integrator="implicitfast" />
 
   <default>
     <default class="torso_motor">

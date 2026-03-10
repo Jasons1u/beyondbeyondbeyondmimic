@@ -55,12 +55,13 @@ class RLPolicyNode(Node):
         )
 
         self.action_pub = self.create_publisher(Float32MultiArray, "action", 10)
+        self.initial_pose_pub = self.create_publisher(Float32MultiArray, "initial_pose", 10)
         self.sim_time = 0.0
 
         # Load minimal config (only keys present in YAML)
         self.load_config()
         # Load policy if desired (may be TorchScript); it's optional — node works without it.
-        self.initial_pose_index = 3
+        self.initial_pose_index = 0
 
         self.load_policy()
         self.load_policy_metadata()
@@ -312,6 +313,20 @@ class RLPolicyNode(Node):
         print(f"observation_names: {self.observation_names}")
         print(f"command_names: {self.command_names}")
 
+        # --- NEW: Publish initial neutral pose to simulator ---
+        self.publish_initial_pose()
+
+    def publish_initial_pose(self):
+        """
+        Publish the initial neutral pose (action=0) to the simulator.
+        This ensures MuJoCo starts at the pose expected by the policy.
+        """
+        msg = Float32MultiArray()
+        neutral_pose = self.isaac_to_mujoco(self.default_joint_pos)
+        msg.data = neutral_pose.tolist()
+        self.initial_pose_pub.publish(msg)
+        self.get_logger().info(f"Published initial neutral pose to simulator: {len(msg.data)} joints")
+
     def load_policy(self):
         """
         Strict ONNX loader with onnxruntime inference support.
@@ -515,7 +530,7 @@ class RLPolicyNode(Node):
                 input_feed[name] = arr
             elif name == "time_step":
                 # Provide a default time step input if required
-                arr = np.array([[self.sim_time / self.control_dt]], dtype=np.float32)
+                arr = np.array([[self.motion_frame_idx]], dtype=np.float32)
                 input_feed[name] = arr
 
         # Run inference
@@ -527,7 +542,8 @@ class RLPolicyNode(Node):
     def policy_step(self):
         # Do not run policy until simulator signals control_enable
         if not getattr(self, "control_enabled", False):
-            # Keep alive but skip heavy processing
+            # Repeatedly publish initial pose to ensure simulator receives it
+            self.publish_initial_pose()
             return
         # One-time print when policy actually starts running
         if not getattr(self, '_policy_started', False):

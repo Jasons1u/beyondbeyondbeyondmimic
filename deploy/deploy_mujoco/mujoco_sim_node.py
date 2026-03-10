@@ -35,6 +35,9 @@ class MujocoSimNode(Node):
         self.action_sub = self.create_subscription(
             Float32MultiArray, "action", self.action_callback, 10
         )
+        self.initial_pose_sub = self.create_subscription(
+            Float32MultiArray, "initial_pose", self.initial_pose_callback, 10
+        )
         self.action = None
         self.timer = self.create_timer(0.0, self.sim_step)  # As fast as possible
         self.num_joints = 29
@@ -44,6 +47,9 @@ class MujocoSimNode(Node):
         self._control_enable_sent = False
         # duration to hold robot upright before enabling policy (seconds)
         self._hold_upright_duration = 4.0
+        # whether we received the initial pose from policy to start the hold timer
+        self._initial_pose_received = False
+        self._hold_start_time = 0.0
         # one-time prints
         self._hold_printed = False
         self._released_printed = False
@@ -68,14 +74,14 @@ class MujocoSimNode(Node):
         self.target_dof_d = np.zeros(self.num_joints)
 
         # --- Initialize robot joints to provided values ---
-        initial_joint_values = np.array([
+        self.initial_joint_values = np.array([
             -0.413, 0.0, 0.0, 0.807, -0.374, 0.0, -0.413, 0.0, 0.0, 0.807,
             -0.374, 0.0, 0.0, 0.0, 0.0, 0.498, 0.3, 0.0, 0.501, 0.0,
             0.0, 0.0, 0.498, -0.3, 0.0, 0.501, 0.0, 0.0, 0.0
         ], dtype=np.float64)
-        self.d.qpos[7:7 + self.num_joints] = initial_joint_values
+        self.d.qpos[7:7 + self.num_joints] = self.initial_joint_values
         # Optionally, also set target positions to match initial
-        self.target_dof_pos = initial_joint_values.copy()
+        self.target_dof_pos = self.initial_joint_values.copy()
 
         # Launch the viewer in passive mode
         self.viewer = mujoco.viewer.launch_passive(self.m, self.d)
@@ -92,23 +98,49 @@ class MujocoSimNode(Node):
         self.target_dof_p = arr[n : 2 * n]
         self.target_dof_d = arr[2 * n : 3 * n]
 
+    def initial_pose_callback(self, msg):
+        """
+        Callback to set the initial pose of the robot based on policy neutral state.
+        Starts the hold timer when first received.
+        """
+        new_initial_values = np.array(msg.data, dtype=np.float64)
+        if len(new_initial_values) == self.num_joints:
+            if not self._initial_pose_received:
+                self.get_logger().info(f"[MujocoSimNode] Received first initial pose. Starting {self._hold_upright_duration}s hold timer.")
+                self._initial_pose_received = True
+                self._hold_start_time = self.d.time
+            
+            # Update the pose if we haven't enabled control yet
+            if not self._control_enable_sent:
+                self.initial_joint_values = new_initial_values
+                self.d.qpos[7:7 + self.num_joints] = self.initial_joint_values
+                self.target_dof_pos = self.initial_joint_values.copy()
+                # Also reset velocities to zero for stability
+                self.d.qvel[6:6 + self.num_joints] = 0.0
+        else:
+            self.get_logger().warn(f"[MujocoSimNode] Initial pose size mismatch: expected {self.num_joints}, got {len(new_initial_values)}")
+
     def sim_step(self):
         self.viewer.cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
         self.viewer.cam.trackbodyid = 1  # ID of the robot's main body
         start_time = time.time()  # Start timing at the very beginning of the step
-        # Hold robot upright for initial period: fix base pose and zero base velocities
-        if self.d.time < self._hold_upright_duration:
-            # print when hold starts (only once)
+        
+        # Determine if we are in the "hold" phase (either waiting for pose or within hold duration)
+        is_holding = True
+        if self._initial_pose_received:
+            elapsed_hold = self.d.time - self._hold_start_time
+            if elapsed_hold >= self._hold_upright_duration:
+                is_holding = False
+        
+        # Force robot upright during hold
+        if is_holding:
             if not self._hold_printed:
                 print(f"[MujocoSimNode] Holding robot upright for {self._hold_upright_duration}s", flush=True)
                 self._hold_printed = True
-            # Force pelvis/base position and orientation to initial values
-            # keep base at current z (pelvis height) and neutral orientation
+            
+            # Force pelvis/base position and orientation
             self.d.qpos[0] = 0.0
             self.d.qpos[1] = 0.0
-            # preserve current pelvis height
-            # if not set, leave as-is
-            # set neutral orientation quaternion (w,x,y,z) = (1,0,0,0)
             try:
                 self.d.qpos[3] = 1.0
                 self.d.qpos[4] = 0.0
@@ -116,19 +148,21 @@ class MujocoSimNode(Node):
                 self.d.qpos[6] = 0.0
             except Exception:
                 pass
-            # zero base linear and angular velocities
+            # zero base linear and angular velocities, but let z velocity drop naturally
             try:
                 self.d.qvel[0] = 0.0
                 self.d.qvel[1] = 0.0
-                self.d.qvel[2] = 0.0
+                # don't zero Z velocity (index 2)
                 self.d.qvel[3] = 0.0
                 self.d.qvel[4] = 0.0
                 self.d.qvel[5] = 0.0
             except Exception:
                 pass
-        # Apply action if available
-        # if self.action is not None:
-            # self.target_dof_pos = self.action * self.action_scale + self.default_angles
+
+            # If target_dof_pos is not yet set by an action, use the initial pose from policy
+            if np.all(self.target_dof_pos == 0):
+                self.target_dof_pos = self.initial_joint_values
+
         self.d.ctrl[: self.num_joints] = self.target_dof_pos
 
         mujoco.mj_step(self.m, self.d)
@@ -162,7 +196,7 @@ class MujocoSimNode(Node):
         self.time_pub.publish(tmsg)
 
         # Publish a single control_enable flag when hold period ends
-        if (not self._control_enable_sent) and (self.d.time >= self._hold_upright_duration):
+        if (self._initial_pose_received and not self._control_enable_sent) and (self.d.time - self._hold_start_time >= self._hold_upright_duration):
             flag = Float64()
             flag.data = 1.0
             self.control_enable_pub.publish(flag)
