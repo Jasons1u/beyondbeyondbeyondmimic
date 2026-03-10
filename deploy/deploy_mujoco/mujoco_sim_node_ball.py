@@ -24,6 +24,9 @@ class MujocoSimNode(Node):
         self.robot_position_pub = self.create_publisher(
             Float32MultiArray, "robot_position", 10
         )
+        self.ball_orientation_pub = self.create_publisher(
+            Float32MultiArray, "ball_orientation", 10
+        )
         self.time_pub = self.create_publisher(Float64, "sim_time", 10)
         
         self.height_map_pub = self.create_publisher(Float32MultiArray, "height_map", 10)
@@ -59,10 +62,24 @@ class MujocoSimNode(Node):
         self._hold_printed = False
         self._released_printed = False
         
-        # Ball spawn configuration
+        ##################################################### Ball spawn configuration
         self.ball_spawn_time = 0.0  # Spawn ball at t=0.0s
-        self.ball_position = np.array([0.4, 0.2, 1.0])  # x, y, z position
+        self.ball_position = np.array([4.0, -0.4, 0.9])  # x, y, z position
+        self.ball_velocity = np.array([-5.0, 0.0, 4.0])  # initial velocity
+        self.ball_orientation = np.array([1.0, 0.0, 0.0, 0.0])  # identity quaternion (w, x, y, z)1
+        #####################################################
+
         self.ball_spawned = False
+        self.ball_thrown = False
+
+        # Subscribe to ros commands for throwing and resetting the ball
+        # (these are published by the RL policy node when user presses 't' or 'r')
+        self.throw_ball_sub = self.create_subscription(
+            Float32MultiArray, "throw_ball_command", self.throw_ball_callback, 10
+        )
+        self.reset_ball_sub = self.create_subscription(
+            Float32MultiArray, "reset_ball_command", self.reset_ball_callback, 10
+        )
 
     # self.sim_time = 0.0
 
@@ -99,16 +116,42 @@ class MujocoSimNode(Node):
             ball_joint_id = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_JOINT, "ball_joint")
             self.ball_joint_qpos_adr = self.m.jnt_qposadr[ball_joint_id]
             self.ball_joint_qvel_adr = self.m.jnt_dofadr[ball_joint_id]
+            self.ball_gravcomp_default = float(self.m.body_gravcomp[self.ball_body_id])
             self.get_logger().info(f"Ball found: body_id={self.ball_body_id}, qpos_adr={self.ball_joint_qpos_adr}")
         except Exception as e:
             self.get_logger().warning(f"Ball body/joint not found in model: {e}")
             self.ball_body_id = None
+            self.ball_gravcomp_default = 0.0
 
         # Launch the viewer in passive mode
         self.viewer = mujoco.viewer.launch_passive(self.m, self.d)
         # self.viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = 1
         self.viewer_sync_interval = 1.0 / 30.0  # 30Hz
         self._last_viewer_sync_time = 0.0
+
+
+
+    def throw_ball_callback(self, msg):
+        if self.ball_body_id is None:
+            return
+        velocity = np.array(msg.data, dtype=np.float64) if len(msg.data) >= 3 else self.ball_velocity
+        velocity = velocity[:3]
+        self.m.body_gravcomp[self.ball_body_id] = 0.0
+        self.d.qvel[self.ball_joint_qvel_adr:self.ball_joint_qvel_adr + 3] = velocity
+        self.d.qvel[self.ball_joint_qvel_adr + 3:self.ball_joint_qvel_adr + 6] = 0.0
+        self.ball_thrown = True
+        print(f"Throw ball command received. Launch velocity: {velocity}")
+
+    def reset_ball_callback(self, msg):
+        if self.ball_body_id is None:
+            return
+        self.m.body_gravcomp[self.ball_body_id] = self.ball_gravcomp_default
+        self.d.qpos[self.ball_joint_qpos_adr:self.ball_joint_qpos_adr + 3] = self.ball_position
+        self.d.qpos[self.ball_joint_qpos_adr + 3:self.ball_joint_qpos_adr + 7] = [1, 0, 0, 0]
+        self.d.qvel[self.ball_joint_qvel_adr:self.ball_joint_qvel_adr + 6] = 0.0
+        self.ball_thrown = False
+        self.ball_spawned = True
+        print("Reset ball command received. Ball reset to initial position with gravity compensation on.")
 
 
     def action_callback(self, msg):
@@ -240,6 +283,12 @@ class MujocoSimNode(Node):
             ball_pos_msg = Float32MultiArray()
             ball_pos_msg.data = ball_pos.tolist()
             self.ball_position_pub.publish(ball_pos_msg)
+            
+            ball_quat = self.d.xquat[self.ball_body_id]
+            self.ball_orientation = ball_quat
+            ball_quat_msg = Float32MultiArray()
+            ball_quat_msg.data = ball_quat.tolist()
+            self.ball_orientation_pub.publish(ball_quat_msg)
 
         # --- Synchronize simulation time with real time ---
         sim_dt = self.simulation_dt

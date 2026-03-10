@@ -19,7 +19,7 @@ try:
 except Exception:
     ort = None
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray, Float64
+from std_msgs.msg import Float32MultiArray, Float64, Bool
 
 import xml.etree.ElementTree as ET
 
@@ -46,22 +46,30 @@ class RLPolicyNode(Node):
             Float64, "control_enable", self.control_enable_callback, 10
         )
 
-        self.base_lin_vel_sub = self.create_subscription(
-            Float32MultiArray, "base_lin_vel", self.base_lin_vel_callback, 10
+        self.ball_position_sub = self.create_subscription(
+            Float32MultiArray, "ball_intercept_estimate", self.ball_position_callback, 10
         )
 
-        self.ball_position_sub = self.create_subscription(
-            Float32MultiArray, "ball_position", self.ball_position_callback, 10
+        self.ball_orientation_sub = self.create_subscription(
+            Float32MultiArray, "ball_orientation", self.ball_orientation_callback, 10
+        )
+
+        self.play_motion_sub = self.create_subscription(
+            Float32MultiArray, "play_motion_command", self.play_motion_callback, 10
         )
 
         self.action_pub = self.create_publisher(Float32MultiArray, "action", 10)
         self.initial_pose_pub = self.create_publisher(Float32MultiArray, "initial_pose", 10)
         self.sim_time = 0.0
 
+        self.throw_ball_pub = self.create_publisher(Float32MultiArray, "throw_ball_command", 10)
+        self.reset_ball_pub = self.create_publisher(Float32MultiArray, "reset_ball_command", 10)
+        self.motion_in_progress_pub = self.create_publisher(Bool, "motion_in_progress", 10)
+
         # Load minimal config (only keys present in YAML)
         self.load_config()
         # Load policy if desired (may be TorchScript); it's optional — node works without it.
-        self.initial_pose_index = 0
+        self.initial_pose_index = 20
 
         self.load_policy()
         self.load_policy_metadata()
@@ -81,7 +89,6 @@ class RLPolicyNode(Node):
         # Lightweight state used by simplified node
 
         self.robot_position = np.zeros(3, dtype=np.float32)
-        self.base_lin_vel = np.zeros(3, dtype=np.float32)
         self.qj = np.zeros(29, dtype=np.float32)
         self.dqj = np.zeros(29, dtype=np.float32)
         self.omega = np.zeros(3, dtype=np.float32)
@@ -550,22 +557,6 @@ class RLPolicyNode(Node):
             print(f"[RLPolicyNode] Policy stepping started at sim_time={getattr(self,'sim_time',-1):.3f}", flush=True)
             self._policy_started = True
         
-        # Decide which motion to use based on ball's y position in body frame
-        if len(self.motion_trajectories) >= 3:
-            # Compute ball position in body frame
-            ball_pos_relative_w = self.ball_position - self.robot_position
-            q_inv = self._quat_conjugate(self.quat)
-            ball_pos_body = self._quat_rotate(q_inv, ball_pos_relative_w)
-            ball_y_body = ball_pos_body[1]
-            
-            # Select motion based on ball y position
-            if ball_y_body < -0.3:
-                self.which_motion = 0
-            elif ball_y_body > 0.3:
-                self.which_motion = 1
-            else:
-                self.which_motion = 2
-        
         # Handle motion playback: increment frame only if playback active
         if len(self.motion_trajectories) > 0 and self.which_motion < len(self.motion_trajectories) and self._play_motion_once:
             num_frames = self.motion_trajectories[self.which_motion]["joint_pos"].shape[0]
@@ -576,6 +567,11 @@ class RLPolicyNode(Node):
                     # Reached end: reset to first frame and stop playback
                     self.motion_frame_idx = self.initial_pose_index
                     self._play_motion_once = False
+        
+        # publish the motion_in_progress flag based on whether we're actively playing a motion
+        motion_in_progress = Bool()
+        motion_in_progress.data = self._play_motion_once
+        self.motion_in_progress_pub.publish(motion_in_progress)
         
         if hasattr(self, "onnx_sess") and self.onnx_sess is not None:
             try:
@@ -600,9 +596,14 @@ class RLPolicyNode(Node):
                 return
             except Exception as e:
                 print(
-                    f"ONNX inference failed: {e} — falling back to IK/default publish"
+                    f"ONNX inference failed: {e}"
                 )
                 exit(0)
+
+    def play_motion_callback(self, msg):
+        if msg.data[0] > 0.5:
+            self._play_motion_once = True
+            # self.motion_frame_idx = self.initial_pose_index
 
     def sensor_callback(self, msg):
         # Sensor data is [qj, dqj, quat, omega]
@@ -629,15 +630,35 @@ class RLPolicyNode(Node):
     def time_callback(self, msg):
         self.sim_time = msg.data
 
-    def base_lin_vel_callback(self, msg):
-        received = np.array(msg.data, dtype=np.float32)
-        if len(received) == 3:
-            self.base_lin_vel = np.array(received, dtype=np.float32)
-
     def ball_position_callback(self, msg):
         received = np.array(msg.data, dtype=np.float32)
+        #expects in world coordinates
+
         if len(received) == 3:
             self.ball_position = np.array(received, dtype=np.float32)
+
+        ball_pos_relative_w = self.ball_position - self.robot_position
+        q_inv = self._quat_conjugate(self.quat)
+        ball_pos_body = self._quat_rotate(q_inv, ball_pos_relative_w)
+        
+        ball_x_body = ball_pos_body[0]
+        ball_y_body = ball_pos_body[1]
+
+        # self.which_motion = 0  # default to idle
+        # print(f"Ball position in body frame: x={ball_x_body:.3f}, y={ball_y_body:.3f}", flush=True)
+        if ball_x_body == 0.0:
+            self.which_motion = 0
+        elif ball_y_body < 0.0:
+            self.which_motion = 1
+        elif ball_y_body > 0.3:
+            self.which_motion = 2
+        else:
+            self.which_motion = 3
+
+    def ball_orientation_callback(self, msg):
+        received = np.array(msg.data, dtype=np.float32)
+        if len(received) == 4:
+            self.ball_orientation = np.array(received, dtype=np.float32)
 
     def isaac_to_mujoco(self, arr):
         """
@@ -686,8 +707,23 @@ class RLPolicyNode(Node):
         # 2. Rotate to body frame using inverse quaternion
         q_inv = self._quat_conjugate(self.quat)
         ball_pos_body = self._quat_rotate(q_inv, ball_pos_relative_w)
+
+        # Add ball orientation as quaternion in the robot's body frame
+        ball_quat_body = self._quat_multiply(q_inv, self.ball_orientation)
+
+        ball_pos_body = np.concatenate([ball_pos_body, ball_quat_body]).astype(np.float32)
         
         return ball_pos_body.astype(np.float32)
+
+    def obs_command_conditioned_imitate(self):
+        # return command imitate plus command target position concatenated
+        cmd_imitate = self.obs_command_imitate()
+        cmd_target_pos = self.obs_command_target_position()
+        # return cmd_imitate
+
+        # print("cmd_imitate", cmd_imitate)
+        # print("cmd_target_pos", cmd_target_pos)
+        return np.concatenate([cmd_imitate, cmd_target_pos]).astype(np.float32)
 
     def obs_motion_anchor_pos_b(self):
         # Return motion anchor body position error in robot base frame
@@ -775,9 +811,6 @@ class RLPolicyNode(Node):
             [2*(x*z - w*y), 2*(y*z + w*x), 1 - 2*(x*x + y*y)]
         ], dtype=np.float32)
 
-    def obs_base_lin_vel(self):
-        return self.base_lin_vel
-
     def obs_base_ang_vel(self):
         return self.omega
 
@@ -821,7 +854,37 @@ class RLPolicyNode(Node):
                 if rlist:
                     ch = sys.stdin.read(1)
                     if ch.lower() == 'p':
+                                # Decide which motion to use based on ball's y position in body frame
+                        # if len(self.motion_trajectories) >= 3:
+                            # Compute ball position in body frame
+                        ball_pos_relative_w = self.ball_position - self.robot_position
+                        q_inv = self._quat_conjugate(self.quat)
+                        ball_pos_body = self._quat_rotate(q_inv, ball_pos_relative_w)
+                        ball_x_body = ball_pos_body[0]
+                        ball_y_body = ball_pos_body[1]
+
+                        # self.which_motion = 0  # default to idle
+                        print(f"Ball position in body frame: x={ball_x_body:.3f}, y={ball_y_body:.3f}", flush=True)
+                        if ball_x_body == 0.0:
+                            self.which_motion = 0
+                        elif ball_y_body < 0.0:
+                            self.which_motion = 1
+                        elif ball_y_body > 0.3:
+                            self.which_motion = 2
+                        else:
+                            self.which_motion = 3
+                        # self.which_motion = 4
+                        print(self.which_motion)
                         self._play_motion_once = True
+                    if ch.lower() == 't':
+                        # this commands the sim to release and throw the ball
+                        self.throw_ball_pub.publish(Float32MultiArray(data=[1.0]))
+                        print("Throw command sent")
+                    if ch.lower() == 'r':
+                        # this commands the sim to reset the ball to its initial position
+                        self.reset_ball_pub.publish(Float32MultiArray(data=[1.0]))
+                        print("Reset command sent")
+
                     elif ch.lower() == 'q':
                         break
         except Exception as e:

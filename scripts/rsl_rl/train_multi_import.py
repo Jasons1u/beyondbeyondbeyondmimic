@@ -100,9 +100,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
         api = wandb.Api()
         artifact = api.artifact(registry_name)
-        env_cfg.commands.motion.motion_files.append(str(pathlib.Path(artifact.download()) / "motion.npz"))
+        env_cfg.commands.multi_target_motion.motion_files.append(str(pathlib.Path(artifact.download()) / "motion.npz"))
 
-    print('[INFO] Loading motion files: ', env_cfg.commands.motion.motion_files)
+    print('[INFO] Loading motion files: ', env_cfg.commands.multi_target_motion.motion_files)
 
     # specify directory for logging experiments
     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
