@@ -11,7 +11,7 @@ import onnx
 from isaaclab.envs import ManagerBasedRLEnv
 from isaaclab_rl.rsl_rl.exporter import _OnnxPolicyExporter
 
-from whole_body_tracking.tasks.tracking.mdp import MultiTargetConditionedMotionCommand, MotionCommand
+from whole_body_tracking.tasks.tracking.mdp import MotionCommand
 
 
 def export_motion_policy_as_onnx(
@@ -31,11 +31,9 @@ def export_motion_policy_as_onnx(
 class _OnnxMotionPolicyExporter(_OnnxPolicyExporter):
     def __init__(self, env: ManagerBasedRLEnv, actor_critic, normalizer=None, verbose=False):
         super().__init__(actor_critic, normalizer, verbose)
-        # cmd: MotionCommand = env.command_manager.get_term("motion")
-        cmd: MultiTargetConditionedMotionCommand = env.command_manager.get_term("multi_target_motion")
-        motion_source = cmd.motion_loaders[0]
+        cmd: MotionCommand = env.command_manager.get_term("motion")
 
-        # motion_source = cmd.motion if hasattr(cmd, "motion") else cmd.motions[0]
+        motion_source = cmd.motion if hasattr(cmd, "motion") else cmd.motions[0]
 
         self.joint_pos = motion_source.joint_pos.to("cpu")
         self.joint_vel = motion_source.joint_vel.to("cpu")
@@ -113,8 +111,8 @@ def attach_onnx_metadata(env: ManagerBasedRLEnv, run_path: str, path: str, filen
         "observation_names": observation_names,
         "observation_history_lengths": observation_history_lengths,
         "action_scale": env.action_manager.get_term("joint_pos")._scale[0].cpu().tolist(),
-        "anchor_body_name": env.command_manager.get_term("multi_target_motion").cfg.anchor_body_name,
-        "body_names": env.command_manager.get_term("multi_target_motion").cfg.body_names,
+        "anchor_body_name": env.command_manager.get_term("motion").cfg.anchor_body_name,
+        "body_names": env.command_manager.get_term("motion").cfg.body_names,
     }
 
     model = onnx.load(onnx_path)

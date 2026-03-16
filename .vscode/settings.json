@@ -1,5 +1,10 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:conda",
     "python-envs.defaultPackageManager": "ms-python.python:conda",
-    "python-envs.pythonProjects": []
+    "python-envs.pythonProjects": [],
+    "python.defaultInterpreterPath": "~/miniforge3/envs/humanoid/bin/python",
+    "python.analysis.extraPaths": [
+        "source/whole_body_tracking",
+        "scripts/rsl_rl"
+    ]
 }

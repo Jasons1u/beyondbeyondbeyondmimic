@@ -21,7 +21,7 @@ def parse_joint_names_from_xml(xml_path):
 def main():
     parser = argparse.ArgumentParser()
     # parser.add_argument("--motion", type=str, default="artifacts/traj_jump4:v0/motion.npz", help="Path to motion NPZ file")
-    parser.add_argument("--motion", type=str, default="artifacts/srb_jump:v1/motion.npz", help="Path to motion NPZ file")
+    parser.add_argument("--motion", type=str, default="artifacts/srb_jump_1:v0/motion_edited.npz", help="Path to motion NPZ file")
     args = parser.parse_args()
 
     # Set environment variable if not already set

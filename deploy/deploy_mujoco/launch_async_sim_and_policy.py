@@ -32,15 +32,33 @@ def main():
         config = yaml.load(f, Loader=yaml.FullLoader)
     plot_feet = config.get("plot_feet", False)
 
+    # sim_cmd = [
+    #     sys.executable,
+    #     os.path.join(os.path.dirname(__file__), "mujoco_sim_node_ball.py"),
+    #     "--config",
+    #     args.config,
+    # ]
+    # policy_cmd_29 = [
+    #     sys.executable,
+    #     os.path.join(os.path.dirname(__file__), "rl_policy_node_ball.py"),
+    #     "--config",
+    #     args.config,
+    # ]
+    # policy_cmd_13 = [
+    #     sys.executable,
+    #     os.path.join(os.path.dirname(__file__), "rl_policy_node_13dof.py"),
+    #     "--config",
+    #     args.config,
+    # ]
     sim_cmd = [
         sys.executable,
-        os.path.join(os.path.dirname(__file__), "mujoco_sim_node_ball.py"),
+        os.path.join(os.path.dirname(__file__), "mujoco_sim_node.py"),
         "--config",
         args.config,
     ]
     policy_cmd_29 = [
         sys.executable,
-        os.path.join(os.path.dirname(__file__), "rl_policy_node_ball.py"),
+        os.path.join(os.path.dirname(__file__), "rl_policy_node.py"),
         "--config",
         args.config,
     ]
